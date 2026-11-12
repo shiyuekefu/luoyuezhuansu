@@ -58,13 +58,12 @@ async def leave(ctx):
         await ctx.voice_client.disconnect()
         await ctx.send('👋 已经断开语音连接，下次见啦！')
     else:
-        await ctx.send('❌ 我现在不在任何语音频道里哦。')
+        await ctx.send('❌ 我现在不在任何语音频道哦。')
 
-# ==================== 4. 带持久化存储的记账小助手 ====================
+# ==================== 4. 带分类与持久化存储的记账助手 ====================
 
 DATA_FILE = "account.json"
 
-# 加载数据的函数
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
@@ -72,55 +71,86 @@ def load_data():
                 return json.load(f)
         except Exception:
             pass
-    # 默认初始数据
-    return {"total_earn": 0.0, "total_spend": 0.0, "details": []}
+    # 默认初始数据（增加 category_earn 和 category_spend 统计字典）
+    return {
+        "total_earn": 0.0,
+        "total_spend": 0.0,
+        "category_earn": {},
+        "category_spend": {},
+        "details": []
+    }
 
-# 保存数据的函数
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-@bot.command(name='earn', help='记录收入。用法：.earn 200 兼职')
-async def earn(ctx, amount: float, *, note: str = "未备注"):
+@bot.command(name='earn', help='记录收入。用法：.earn 200 工资 兼职收入')
+async def earn(ctx, amount: float, category: str, *, note: str = "未备注"):
     if amount <= 0:
         await ctx.send('❌ 金额必须大于 0 哟！')
         return
     
     data = load_data()
     data["total_earn"] += amount
-    data["details"].append(f"🟢 收入: `+¥{amount}` | 备注: {note} | 记录人: {ctx.author.name}")
+    
+    # 统计分类收入
+    if category not in data["category_earn"]:
+        data["category_earn"][category] = 0.0
+    data["category_earn"][category] += amount
+    
+    data["details"].append(f"🟢 收入: `+¥{amount}` | 分类: **[{category}]** | 备注: {note} | 记录人: {ctx.author.name}")
     save_data(data)
     
-    await ctx.send(f'📝 成功记一笔收入：`+¥{amount}` ({note})，目前总收入：`¥{data["total_earn"]}`')
+    await ctx.send(f'📝 成功记入收入：`+¥{amount}` (分类: **{category}**，备注: {note})，目前总收入：`¥{data["total_earn"]}`')
 
-@bot.command(name='spend', help='记录花销。用法：.spend 50 午饭')
-async def spend(ctx, amount: float, *, note: str = "未备注"):
+@bot.command(name='spend', help='记录花销。用法：.spend 35 餐饮 午饭')
+async def spend(ctx, amount: float, category: str, *, note: str = "未备注"):
     if amount <= 0:
         await ctx.send('❌ 金额必须大于 0 哟！')
         return
     
     data = load_data()
     data["total_spend"] += amount
-    data["details"].append(f"🔴 支出: `-¥{amount}` | 备注: {note} | 记录人: {ctx.author.name}")
+    
+    # 统计分类支出
+    if category not in data["category_spend"]:
+        data["category_spend"][category] = 0.0
+    data["category_spend"][category] += amount
+    
+    data["details"].append(f"🔴 支出: `-¥{amount}` | 分类: **[{category}]** | 备注: {note} | 记录人: {ctx.author.name}")
     save_data(data)
     
-    await ctx.send(f'📝 成功记一笔支出：`-¥{amount}` ({note})，目前总支出：`¥{data["total_spend"]}`')
+    await ctx.send(f'📝 成功记入支出：`-¥{amount}` (分类: **{category}**，备注: {note})，目前总支出：`¥{data["total_spend"]}`')
 
-@bot.command(name='balance', help='查看当前账单结余与明细')
+@bot.command(name='balance', help='查看当前账单结余、分类统计与最近明细')
 async def balance(ctx):
     data = load_data()
     earn_total = data["total_earn"]
     spend_total = data["total_spend"]
     net = earn_total - spend_total
     
+    # 整理分类收入字符串
+    earn_cat_str = ""
+    if data["category_earn"]:
+        earn_cat_str = " | ".join([f"{cat}: ¥{amt}" for cat, amt in data["category_earn"].items()])
+    else:
+        earn_cat_str = "暂无收入分类"
+
+    # 整理分类支出字符串
+    spend_cat_str = ""
+    if data["category_spend"]:
+        spend_cat_str = " | ".join([f"{cat}: ¥{amt}" for cat, amt in data["category_spend"].items()])
+    else:
+        spend_cat_str = "暂无支出分类"
+
     recent_details = data["details"][-5:]
     details_str = "\n".join(recent_details) if recent_details else "暂无记账记录"
     
     msg = (
         f"📊 **当前财务账单面板**\n"
         f"-----------------------------------\n"
-        f"🟢 总收入: `¥{earn_total}`\n"
-        f"🔴 总支出: `¥{spend_total}`\n"
+        f"🟢 总收入: `¥{earn_total}` ({earn_cat_str})\n"
+        f"🔴 总支出: `¥{spend_total}` ({spend_cat_str})\n"
         f"💰 当前结余: **`¥{net}`**\n"
         f"-----------------------------------\n"
         f"📜 **最近动态 (最近5条):**\n{details_str}"
@@ -129,9 +159,15 @@ async def balance(ctx):
 
 @bot.command(name='clear', help='清空并重置当前所有账单数据')
 async def clear_account(ctx):
-    empty_data = {"total_earn": 0.0, "total_spend": 0.0, "details": []}
+    empty_data = {
+        "total_earn": 0.0,
+        "total_spend": 0.0,
+        "category_earn": {},
+        "category_spend": {},
+        "details": []
+    }
     save_data(empty_data)
-    await ctx.send('🗑️ 账单已成功清空，所有收入、支出和明细已重置为 0！')
+    await ctx.send('🗑️ 账单已成功清空，所有分类、收入、支出和明细已重置为 0！')
 
 # ==================== 5. 主程序入口 ====================
 if __name__ == '__main__':

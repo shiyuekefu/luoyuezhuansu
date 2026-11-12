@@ -1,6 +1,8 @@
 import os
 import json
 import threading
+import asyncio
+import datetime
 from flask import Flask
 import discord
 from discord.ext import commands
@@ -71,20 +73,20 @@ def load_data():
                 return json.load(f)
         except Exception:
             pass
-    # 默认初始数据（增加 category_earn 和 category_spend 统计字典）
     return {
         "total_earn": 0.0,
         "total_spend": 0.0,
         "category_earn": {},
         "category_spend": {},
-        "details": []
+        "details": [],
+        "checkins": {}
     }
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-@bot.command(name='earn', help='记录收入。用法：.earn 200 工资 兼职收入')
+@bot.command(name='earn', help='记录收入。用法：.earn 500 工资 兼职收入')
 async def earn(ctx, amount: float, category: str, *, note: str = "未备注"):
     if amount <= 0:
         await ctx.send('❌ 金额必须大于 0 哟！')
@@ -93,7 +95,6 @@ async def earn(ctx, amount: float, category: str, *, note: str = "未备注"):
     data = load_data()
     data["total_earn"] += amount
     
-    # 统计分类收入
     if category not in data["category_earn"]:
         data["category_earn"][category] = 0.0
     data["category_earn"][category] += amount
@@ -103,7 +104,7 @@ async def earn(ctx, amount: float, category: str, *, note: str = "未备注"):
     
     await ctx.send(f'📝 成功记入收入：`+¥{amount}` (分类: **{category}**，备注: {note})，目前总收入：`¥{data["total_earn"]}`')
 
-@bot.command(name='spend', help='记录花销。用法：.spend 35 餐饮 午饭')
+@bot.command(name='spend', help='记录花销。用法：.spend 45 餐饮 午饭')
 async def spend(ctx, amount: float, category: str, *, note: str = "未备注"):
     if amount <= 0:
         await ctx.send('❌ 金额必须大于 0 哟！')
@@ -112,7 +113,6 @@ async def spend(ctx, amount: float, category: str, *, note: str = "未备注"):
     data = load_data()
     data["total_spend"] += amount
     
-    # 统计分类支出
     if category not in data["category_spend"]:
         data["category_spend"][category] = 0.0
     data["category_spend"][category] += amount
@@ -129,19 +129,8 @@ async def balance(ctx):
     spend_total = data["total_spend"]
     net = earn_total - spend_total
     
-    # 整理分类收入字符串
-    earn_cat_str = ""
-    if data["category_earn"]:
-        earn_cat_str = " | ".join([f"{cat}: ¥{amt}" for cat, amt in data["category_earn"].items()])
-    else:
-        earn_cat_str = "暂无收入分类"
-
-    # 整理分类支出字符串
-    spend_cat_str = ""
-    if data["category_spend"]:
-        spend_cat_str = " | ".join([f"{cat}: ¥{amt}" for cat, amt in data["category_spend"].items()])
-    else:
-        spend_cat_str = "暂无支出分类"
+    earn_cat_str = " | ".join([f"{cat}: ¥{amt}" for cat, amt in data["category_earn"].items()]) if data["category_earn"] else "暂无收入分类"
+    spend_cat_str = " | ".join([f"{cat}: ¥{amt}" for cat, amt in data["category_spend"].items()]) if data["category_spend"] else "暂无支出分类"
 
     recent_details = data["details"][-5:]
     details_str = "\n".join(recent_details) if recent_details else "暂无记账记录"
@@ -159,17 +148,55 @@ async def balance(ctx):
 
 @bot.command(name='clear', help='清空并重置当前所有账单数据')
 async def clear_account(ctx):
-    empty_data = {
-        "total_earn": 0.0,
-        "total_spend": 0.0,
-        "category_earn": {},
-        "category_spend": {},
-        "details": []
-    }
-    save_data(empty_data)
+    data = load_data()
+    data["total_earn"] = 0.0
+    data["total_spend"] = 0.0
+    data["category_earn"] = {}
+    data["category_spend"] = {}
+    data["details"] = []
+    save_data(data)
     await ctx.send('🗑️ 账单已成功清空，所有分类、收入、支出和明细已重置为 0！')
 
-# ==================== 5. 主程序入口 ====================
+# ==================== 5. 新增：倒计时提醒与签到打卡 ====================
+
+@bot.command(name='timer', help='设置一个倒计时提醒。用法：.timer 60 记得喝水')
+async def timer(ctx, seconds: int, *, message: str = "时间到！"):
+    if seconds <= 0:
+        await ctx.send('❌ 倒计时时间必须大于 0 秒哟！')
+        return
+    await ctx.send(f'⏳ 计时器已启动！将在 **{seconds}秒** 后提醒你：{message}')
+    await asyncio.sleep(seconds)
+    await ctx.send(f'⏰ **{ctx.author.mention} 叮咚！时间到啦：** {message}')
+
+@bot.command(name='checkin', help='每日心情签到。用法：.checkin 开心')
+async def checkin(ctx, *, mood: str = "正常"):
+    data = load_data()
+    if "checkins" not in data:
+        data["checkins"] = {}
+    
+    user_id = str(ctx.author.id)
+    today = datetime.date.today().isoformat()
+    
+    user_record = data["checkins"].get(user_id, {"last_date": "", "streak": 0, "mood": ""})
+    
+    if user_record["last_date"] == today:
+        await ctx.send(f'✨ {ctx.author.name}，你今天已经签到过了哦！今日心情：`{user_record["mood"]}`')
+        return
+    
+    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    if user_record["last_date"] == yesterday:
+        user_record["streak"] += 1
+    else:
+        user_record["streak"] = 1
+        
+    user_record["last_date"] = today
+    user_record["mood"] = mood
+    data["checkins"][user_id] = user_record
+    save_data(data)
+    
+    await ctx.send(f'✅ **签到成功！**\n👤 签到人: `{ctx.author.name}`\n🌈 今日心情: `{mood}`\n🔥 连续签到: `{user_record["streak"]} 天`')
+
+# ==================== 6. 主程序入口 ====================
 if __name__ == '__main__':
     keep_alive()
     TOKEN = os.getenv('DISCORD_TOKEN')

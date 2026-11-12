@@ -209,7 +209,36 @@ async def timer(ctx, seconds: int, *, message: str = "时间到！"):
     await ctx.send(f'⏳ 计时器已启动！将在 **{seconds}秒** 后提醒你：{message}')
     await asyncio.sleep(seconds)
     await ctx.send(f'⏰ **{ctx.author.mention} 叮咚！时间到啦：** {message}')
+# ==================== 智能倒计时提醒（支持 s, m, h, d 单位） ====================
 
+@bot.command(name='timer', help='设置倒计时。用法：.timer 2d 记得打卡 或 .timer 5m 泡面好了')
+async def timer(ctx, time_str: str, *, message: str = "时间到！"):
+    seconds = 0
+    time_str = time_str.lower()
+    
+    try:
+        if time_str.endswith('s'):
+            seconds = int(time_str[:-1])
+        elif time_str.endswith('m'):
+            seconds = int(time_str[:-1]) * 60
+        elif time_str.endswith('h'):
+            seconds = int(time_str[:-1]) * 3600
+        elif time_str.endswith('d'):
+            seconds = int(time_str[:-1]) * 86400  # 1天 = 24 * 3600 秒
+        else:
+            # 如果没写单位，默认当作秒数处理
+            seconds = int(time_str)
+    except ValueError:
+        await ctx.send('❌ 时间格式写错啦！请使用数字加上单位，例如：`30s`（秒）、`5m`（分钟）、`2h`（小时）、`1d`（天）。')
+        return
+
+    if seconds <= 0:
+        await ctx.send('❌ 倒计时时间必须大于 0 哟！')
+        return
+        
+    await ctx.send(f'⏳ 计时器已启动！将在 **{time_str}** 后提醒你：{message}')
+    await asyncio.sleep(seconds)
+    await ctx.send(f'⏰ **{ctx.author.mention} 叮咚！时间到啦：** {message}')
 @bot.command(name='checkin', help='每日心情签到。用法：.checkin 开心')
 async def checkin(ctx, *, mood: str = "正常"):
     data = load_data()

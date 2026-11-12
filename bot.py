@@ -71,7 +71,61 @@ async def on_voice_state_update(member, before, after):
     if member.id == bot.user.id:
         if before.channel is not None and after.channel is None:
             print('⚠️ 监测到 Bot 被移出语音频道。')
+# ==================== 5. 记账小助手功能 ====================
 
+# 用一个简单的字典或文件来存账目（目前存放在内存中，重启会清空；如果想永久保存，后面可以加文件读写）
+# 格式: {"total_earn": 0.0, "total_spend": 0.0, "details": []}
+account_data = {
+    "total_earn": 0.0,
+    "total_spend": 0.0,
+    "details": []
+}
+
+# 1. 记录花销
+@bot.command(name='spend', help='记录花销。用法：!spend 50 喝奶茶')
+async def spend(ctx, amount: float, *, note: str = "未备注"):
+    if amount <= 0:
+        await ctx.send('❌ 金额必须大于 0 哟！')
+        return
+    
+    account_data["total_spend"] += amount
+    account_data["details"].append(f"🔴 支出: `-¥{amount}` | 备注: {note} | 记录人: {ctx.author.name}")
+    
+    await ctx.send(f'📝 成功记一笔支出：`-¥{amount}` ({note})，目前总支出：`¥{account_data["total_spend"]}`')
+
+# 2. 记录收入
+@bot.command(name='earn', help='记录收入。用法：!earn 200 卖闲置')
+async def earn(ctx, amount: float, *, note: str = "未备注"):
+    if amount <= 0:
+        await ctx.send('❌ 金额必须大于 0 哟！')
+        return
+    
+    account_data["total_earn"] += amount
+    account_data["details"].append(f"🟢 收入: `+¥{amount}` | 备注: {note} | 记录人: {ctx.author.name}")
+    
+    await ctx.send(f'📝 成功记一笔收入：`+¥{amount}` ({note})，目前总收入：`¥{account_data["total_earn"]}`')
+
+# 3. 查看账单和结余
+@bot.command(name='balance', help='查看当前账单结余与明细')
+async def balance(ctx):
+    earn_total = account_data["total_earn"]
+    spend_total = account_data["total_spend"]
+    net = earn_total - spend_total
+    
+    # 获取最近的 5 条明细
+    recent_details = account_data["details"][-5:]
+    details_str = "\n".join(recent_details) if recent_details else "暂无记账记录"
+    
+    msg = (
+        f"📊 **当前财务账单面板**\n"
+        f"-----------------------------------\n"
+        f"🟢 总收入: `¥{earn_total}`\n"
+        f"🔴 总支出: `¥{spend_total}`\n"
+        f"💰 当前结余: **`¥{net}`**\n"
+        f"-----------------------------------\n"
+        f"📜 **最近动态 (最近5条):**\n{details_str}"
+    )
+    await ctx.send(msg)
 # ==================== 4. 主程序入口 ====================
 if __name__ == '__main__':
     keep_alive()

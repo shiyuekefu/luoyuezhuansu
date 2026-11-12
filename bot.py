@@ -3,6 +3,7 @@ import json
 import threading
 import asyncio
 import datetime
+import random
 from flask import Flask
 import discord
 from discord.ext import commands
@@ -31,7 +32,6 @@ intents.message_content = True
 intents.guilds = True
 intents.voice_states = True
 
-# 禁用默认 help，使用我们好看的 Embed 帮助菜单
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
 @bot.event
@@ -62,6 +62,15 @@ def load_data():
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
+# 获取宠物等级称号的辅助函数
+def get_pet_title(level):
+    if level >= 5:
+        return "✨ 神级幻兽 (传说守护)"
+    elif level >= 3:
+        return "⭐ 进阶灵兽 (资深伙伴)"
+    else:
+        return "🌱 初级萌宠 (实习可爱)"
 
 # ==================== 4. 自定义 .help 帮助菜单 ====================
 @bot.command(name='help', help='查看所有可用的指令帮助菜单')
@@ -96,17 +105,19 @@ async def custom_help(ctx):
         name="⏰ 工具与互动",
         value=(
             "`.timer <时间(支持s/m/h/d)> <提醒内容>` - 设置倒计时提醒\n"
-            "`.checkin <心情>` - 每日心情打卡与连续签到"
+            "`.checkin <心情>` - 每日心情打卡（**自动联动喂养宠物**）"
         ),
         inline=False
     )
 
     embed.add_field(
-        name="🐾 虚拟宠物养成",
+        name="🐾 虚拟宠物养成系统",
         value=(
-            "`.pet` - 查看宠物状态面板\n"
-            "`.feed` - 给宠物喂食（增加饱食度与好感度）\n"
-            "`.play` - 和宠物玩耍（增加经验与好感度）\n"
+            "`.pet` - 查看宠物状态面板与实时心声\n"
+            "`.feed` - 给宠物喂食（饱食度 +25）\n"
+            "`.play` - 和宠物玩耍（经验 +35）\n"
+            "`.pat` - 摸摸宠物（好感度 +8）\n"
+            "`.explore` - 让宠物出门探险寻宝\n"
             "`.rename <新名字>` - 给宠物修改专属名字"
         ),
         inline=False
@@ -210,7 +221,7 @@ async def clear_account(ctx):
     save_data(data)
     await ctx.send('🗑️ 账单已成功清空，所有分类、收入、支出和明细已重置为 0！')
 
-# ==================== 7. 智能倒计时与签到打卡 ====================
+# ==================== 7. 智能倒计时与签到联动打卡 ====================
 @bot.command(name='timer', help='设置倒计时。用法：.timer 2d 记得打卡 或 .timer 5m 泡面好了')
 async def timer(ctx, time_str: str, *, message: str = "时间到！"):
     seconds = 0
@@ -239,7 +250,7 @@ async def timer(ctx, time_str: str, *, message: str = "时间到！"):
     await asyncio.sleep(seconds)
     await ctx.send(f'⏰ **{ctx.author.mention} 叮咚！时间到啦：** {message}')
 
-@bot.command(name='checkin', help='每日心情签到。用法：.checkin 开心')
+@bot.command(name='checkin', help='每日心情签到（顺便喂养宠物）')
 async def checkin(ctx, *, mood: str = "正常"):
     data = load_data()
     if "checkins" not in data:
@@ -263,11 +274,31 @@ async def checkin(ctx, *, mood: str = "正常"):
     user_record["last_date"] = today
     user_record["mood"] = mood
     data["checkins"][user_id] = user_record
+    
+    # 🌟 签到联动宠物：顺便给宠物喂食加经验！
+    if "pet" not in data:
+        data["pet"] = {"name": "团子", "hunger": 80, "affection": 50, "level": 1, "exp": 0}
+    
+    pet = data["pet"]
+    pet["hunger"] = min(100, pet["hunger"] + 20)
+    pet["affection"] = min(100, pet["affection"] + 5)
+    pet["exp"] += 20
+    
+    level_up_msg = ""
+    if pet["exp"] >= 100:
+        pet["level"] += 1
+        pet["exp"] -= 100
+        level_up_msg = f"\n🎉 **签到福利！宠物金光一闪，升级到了 Lv.{pet['level']} ({get_pet_title(pet['level'])})！**"
+
     save_data(data)
     
-    await ctx.send(f'✅ **签到成功！**\n👤 签到人: `{ctx.author.name}`\n🌈 今日心情: `{mood}`\n🔥 连续签到: `{user_record["streak"]} 天`')
+    await ctx.send(
+        f"✅ **签到成功！**\n"
+        f"👤 签到人: `{ctx.author.name}` | 🌈 心情: `{mood}` | 🔥 连续签到: `{user_record['streak']} 天`\n"
+        f"🐾 **宠物联动**：因为你完成了签到，顺便喂了 **{pet['name']}** 饱食度 `+20`，好感度 `+5`，宠物经验 `+20`！{level_up_msg}"
+    )
 
-# ==================== 8. 虚拟宠物养成系统 ====================
+# ==================== 8. 进阶虚拟宠物养成系统 ====================
 @bot.command(name='pet', help='查看你的专属虚拟宠物状态')
 async def pet_status(ctx):
     data = load_data()
@@ -276,14 +307,28 @@ async def pet_status(ctx):
         save_data(data)
     
     pet = data["pet"]
+    name = pet['name']
+    title = get_pet_title(pet['level'])
+    
+    if pet['hunger'] < 30:
+        mood_talk = f"呜呜，{name} 的肚子快饿扁啦！快用 `.feed` 喂我好吃的~"
+    elif pet['affection'] > 80:
+        mood_talk = f"蹭蹭主人~ {name} 最喜欢你啦！✨"
+    elif pet['level'] >= 3:
+        mood_talk = f"哼哼，本 {name} 现在可是 {title} 呢，快夸夸我！"
+    else:
+        mood_talk = f"眨巴眼睛看着你，摇了摇尾巴~"
+
     msg = (
-        f"🐾 **你的专属虚拟宠物：{pet['name']}**\n"
+        f"🐾 **你的专属虚拟宠物：{name}**\n"
         f"-----------------------------------\n"
+        f"👑 当前称号: **`{title}`**\n"
+        f"💬 **宠物心声**: *\"{mood_talk}\"*\n"
         f"⭐ 等级: `Lv.{pet['level']}` (经验: {pet['exp']}/100)\n"
         f"🍖 饱食度: `{pet['hunger']}/100`\n"
         f"💖 好感度: `{pet['affection']}/100`\n"
         f"-----------------------------------\n"
-        f"💡 提示：使用 `.feed` 喂食，`.play` 玩耍，`.rename` 改名！"
+        f"💡 **互动指令**：`.feed` 喂食 | `.play` 玩耍 | `.pat` 摸摸 | `.explore` 探险 | `.rename` 改名"
     )
     await ctx.send(msg)
 
@@ -295,14 +340,14 @@ async def pet_feed(ctx):
     
     pet = data["pet"]
     if pet["hunger"] >= 100:
-        await ctx.send(f"🐾 **{pet['name']}** 已经吃得饱饱的啦，暂时吃不下啦！")
+        await ctx.send(f"🐾 **{pet['name']}** 摸了摸溜圆的小肚子，打了个饱嗝：\"吃不下啦主人！\"")
         return
         
-    pet["hunger"] = min(100, pet["hunger"] + 20)
+    pet["hunger"] = min(100, pet["hunger"] + 25)
     pet["affection"] = min(100, pet["affection"] + 5)
     save_data(data)
     
-    await ctx.send(f"🍖 你给 **{pet['name']}** 喂了一份美味的食物！饱食度 `+20`，好感度 `+5` 💖")
+    await ctx.send(f"🍖 你给 **{pet['name']}** 喂了一份美味的食物！饱食度 `+25`，好感度 `+5` 💖 满足地眯起了眼睛~")
 
 @bot.command(name='play', help='和宠物玩耍，增加经验和等级')
 async def pet_play(ctx):
@@ -311,23 +356,73 @@ async def pet_play(ctx):
         data["pet"] = {"name": "团子", "hunger": 80, "affection": 50, "level": 1, "exp": 0}
     
     pet = data["pet"]
-    if pet["hunger"] < 15:
-        await ctx.send(f"🐾 **{pet['name']}** 肚子饿扁啦，快先用 `.feed` 喂它吃东西再玩吧！")
+    if pet["hunger"] < 20:
+        await ctx.send(f"🐾 **{pet['name']}** 饿得趴在地上动弹不得：\"先喂我吃东西（`.feed`），才有力气陪你玩嘛……\"")
         return
         
-    pet["hunger"] = max(0, pet["hunger"] - 15)
-    pet["exp"] += 30
+    pet["hunger"] = max(0, pet["hunger"] - 20)
+    pet["exp"] += 35
     pet["affection"] = min(100, pet["affection"] + 10)
     
     level_up_msg = ""
     if pet["exp"] >= 100:
         pet["level"] += 1
         pet["exp"] -= 100
-        level_up_msg = f"\n🎉 **太棒了！宠物升级到了 Lv.{pet['level']}！**"
+        level_up_msg = f"\n🎉 **金光一闪！{pet['name']} 升级到了 Lv.{pet['level']} ({get_pet_title(pet['level'])})！**"
         
     save_data(data)
     
-    await ctx.send(f"🎾 你开心地和 **{pet['name']}** 玩了一会儿！经验 `+30`，好感度 `+10`，饱食度 `-15`。{level_up_msg}")
+    await ctx.send(f"🎾 你开心地和 **{pet['name']}** 玩了一会儿抛球游戏！经验 `+35`，好感度 `+10`，饱食度 `-20`。{level_up_msg}")
+
+@bot.command(name='pat', help='摸摸你的宠物，增加好感度')
+async def pet_pat(ctx):
+    data = load_data()
+    if "pet" not in data:
+        data["pet"] = {"name": "团子", "hunger": 80, "affection": 50, "level": 1, "exp": 0}
+    
+    pet = data["pet"]
+    pet["affection"] = min(100, pet["affection"] + 8)
+    save_data(data)
+    
+    pat_reactions = [
+        f"舒舒服服地眯起眼睛，发出呼噜呼噜的声音~ 好感度 `+8` 💖",
+        f"开心地转了个圈，用头蹭了蹭你的手心！好感度 `+8` 💖",
+        f"尾巴摇得像个小风扇，高兴得快要跳起来啦！好感度 `+8` 💖"
+    ]
+    await ctx.send(f"👋 你轻轻摸了摸 **{pet['name']}** 的脑袋：{random.choice(pat_reactions)}")
+
+@bot.command(name='explore', help='让宠物出去探险，带回经验和惊喜')
+async def pet_explore(ctx):
+    data = load_data()
+    if "pet" not in data:
+        data["pet"] = {"name": "团子", "hunger": 80, "affection": 50, "level": 1, "exp": 0}
+    
+    pet = data["pet"]
+    if pet["hunger"] < 30:
+        await ctx.send(f"🐾 **{pet['name']}** 肚子太饿了，拒绝出门探险：\"不吃饱肚子怎么有力气跑远路嘛！\"")
+        return
+        
+    pet["hunger"] = max(0, pet["hunger"] - 25)
+    
+    exp_gain = random.randint(25, 50)
+    pet["exp"] += exp_gain
+    
+    level_up_msg = ""
+    if pet["exp"] >= 100:
+        pet["level"] += 1
+        pet["exp"] -= 100
+        level_up_msg = f"\n🎉 **探险归来时突然顿悟，晋升为 Lv.{pet['level']} ({get_pet_title(pet['level'])})！**"
+        
+    save_data(data)
+    
+    adventures = [
+        "在花园里抓了一只蝴蝶，顺便踩了几个梅花脚印",
+        "在路边捡到了一颗亮晶晶的小石头，开心地叼了回来",
+        "跟邻居家的猫咪友好交流了一番，学到了不少生存小技巧",
+        "在草丛里睡了个懒觉，顺便晒了个暖洋洋的太阳"
+    ]
+    
+    await ctx.send(f"🗺️ **{pet['name']}** 背着小书包出去探险啦！它{random.choice(adventures)}。\n✨ 获得探险经验 `+{exp_gain}`，饱食度 `-25`。{level_up_msg}")
 
 @bot.command(name='rename', help='给你的虚拟宠物修改名字。用法：.rename 布丁')
 async def pet_rename(ctx, *, new_name: str):

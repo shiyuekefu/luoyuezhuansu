@@ -255,6 +255,69 @@ async def checkin(ctx, *, mood: str = "正常"):
     save_data(data)
     
     await ctx.send(f'✅ **签到成功！**\n👤 签到人: `{ctx.author.name}`\n🌈 今日心情: `{mood}`\n🔥 连续签到: `{user_record["streak"]} 天`')
+    # ==================== 7. 虚拟宠物养成系统 ====================
+
+@bot.command(name='pet', help='查看你的专属虚拟宠物状态')
+async def pet_status(ctx):
+    data = load_data()
+    if "pet" not in data:
+        data["pet"] = {"name": "团子", "hunger": 80, "affection": 50, "level": 1, "exp": 0}
+        save_data(data)
+    
+    pet = data["pet"]
+    msg = (
+        f"🐾 **你的专属虚拟宠物：{pet['name']}**\n"
+        f"-----------------------------------\n"
+        f"⭐ 等级: `Lv.{pet['level']}` (经验: {pet['exp']}/100)\n"
+        f"🍖 饱食度: `{pet['hunger']}/100`\n"
+        f"💖 好感度: `{pet['affection']}/100`\n"
+        f"-----------------------------------\n"
+        f"💡 提示：使用 `.feed` 喂食，使用 `.play` 和它玩耍！"
+    )
+    await ctx.send(msg)
+
+@bot.command(name='feed', help='给宠物喂食，增加饱食度和好感度')
+async def pet_feed(ctx):
+    data = load_data()
+    if "pet" not in data:
+        data["pet"] = {"name": "团子", "hunger": 80, "affection": 50, "level": 1, "exp": 0}
+    
+    pet = data["pet"]
+    if pet["hunger"] >= 100:
+        await ctx.send(f"🐾 **{pet['name']}** 已经吃得饱饱的啦，暂时吃不下啦！")
+        return
+        
+    pet["hunger"] = min(100, pet["hunger"] + 20)
+    pet["affection"] = min(100, pet["affection"] + 5)
+    save_data(data)
+    
+    await ctx.send(f"🍖 你给 **{pet['name']}** 喂了一份美味的食物！饱食度 `+20`，好感度 `+5` 💖")
+
+@bot.command(name='play', help='和宠物玩耍，增加经验和等级')
+async def pet_play(ctx):
+    data = load_data()
+    if "pet" not in data:
+        data["pet"] = {"name": "团子", "hunger": 80, "affection": 50, "level": 1, "exp": 0}
+    
+    pet = data["pet"]
+    if pet["hunger"] < 15:
+        await ctx.send(f"🐾 **{pet['name']}** 肚子饿扁啦，快先用 `.feed` 喂它吃东西再玩吧！")
+        return
+        
+    pet["hunger"] = max(0, pet["hunger"] - 15)
+    pet["exp"] += 30
+    pet["affection"] = min(100, pet["affection"] + 10)
+    
+    # 升级判定
+    level_up_msg = ""
+    if pet["exp"] >= 100:
+        pet["level"] += 1
+        pet["exp"] -= 100
+        level_up_msg = f"\n🎉 **太棒了！宠物升级到了 Lv.{pet['level']}！**"
+        
+    save_data(data)
+    
+    await ctx.send(f"🎾 你开心地和 **{pet['name']}** 玩了一会儿！经验 `+30`，好感度 `+10`，饱食度 `-15`。{level_up_msg}")
 
 # ==================== 7. 主程序入口 ====================
 if __name__ == '__main__':

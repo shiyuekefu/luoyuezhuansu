@@ -31,7 +31,6 @@ intents.message_content = True
 intents.guilds = True
 intents.voice_states = True
 
-# 自带的 help 先禁用，我们用自定义好看的 Embed 菜单
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
 @bot.event
@@ -39,7 +38,7 @@ async def on_ready():
     print(f'✅ Bot 已成功登录: {bot.user}')
     print('-----------------------------------------')
 
-# ==================== 3. 自定义好看的 .help 帮助菜单 ====================
+# ==================== 3. 自定义 .help 帮助菜单 ====================
 @bot.command(name='help', help='查看所有可用的指令帮助菜单')
 async def custom_help(ctx):
     embed = discord.Embed(
@@ -71,7 +70,7 @@ async def custom_help(ctx):
     embed.add_field(
         name="⏰ 工具与互动",
         value=(
-            "`.timer <秒数> <提醒内容>` - 设置倒计时提醒\n"
+            "`.timer <时间(支持s/m/h/d)> <提醒内容>` - 设置倒计时提醒\n"
             "`.checkin <心情>` - 每日心情打卡与连续签到"
         ),
         inline=False
@@ -199,17 +198,7 @@ async def clear_account(ctx):
     save_data(data)
     await ctx.send('🗑️ 账单已成功清空，所有分类、收入、支出和明细已重置为 0！')
 
-# ==================== 6. 倒计时提醒与签到打卡 ====================
-
-@bot.command(name='timer', help='设置一个倒计时提醒。用法：.timer 60 记得喝水')
-async def timer(ctx, seconds: int, *, message: str = "时间到！"):
-    if seconds <= 0:
-        await ctx.send('❌ 倒计时时间必须大于 0 秒哟！')
-        return
-    await ctx.send(f'⏳ 计时器已启动！将在 **{seconds}秒** 后提醒你：{message}')
-    await asyncio.sleep(seconds)
-    await ctx.send(f'⏰ **{ctx.author.mention} 叮咚！时间到啦：** {message}')
-# ==================== 智能倒计时提醒（支持 s, m, h, d 单位） ====================
+# ==================== 6. 智能倒计时提醒与签到打卡 ====================
 
 @bot.command(name='timer', help='设置倒计时。用法：.timer 2d 记得打卡 或 .timer 5m 泡面好了')
 async def timer(ctx, time_str: str, *, message: str = "时间到！"):
@@ -224,9 +213,8 @@ async def timer(ctx, time_str: str, *, message: str = "时间到！"):
         elif time_str.endswith('h'):
             seconds = int(time_str[:-1]) * 3600
         elif time_str.endswith('d'):
-            seconds = int(time_str[:-1]) * 86400  # 1天 = 24 * 3600 秒
+            seconds = int(time_str[:-1]) * 86400
         else:
-            # 如果没写单位，默认当作秒数处理
             seconds = int(time_str)
     except ValueError:
         await ctx.send('❌ 时间格式写错啦！请使用数字加上单位，例如：`30s`（秒）、`5m`（分钟）、`2h`（小时）、`1d`（天）。')
@@ -239,6 +227,7 @@ async def timer(ctx, time_str: str, *, message: str = "时间到！"):
     await ctx.send(f'⏳ 计时器已启动！将在 **{time_str}** 后提醒你：{message}')
     await asyncio.sleep(seconds)
     await ctx.send(f'⏰ **{ctx.author.mention} 叮咚！时间到啦：** {message}')
+
 @bot.command(name='checkin', help='每日心情签到。用法：.checkin 开心')
 async def checkin(ctx, *, mood: str = "正常"):
     data = load_data()

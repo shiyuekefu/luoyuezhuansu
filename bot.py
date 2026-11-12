@@ -15,7 +15,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return 'Voice & Account Bot is active and running!'
+    return 'Voice, Account & Pet Bot is active and running!'
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
@@ -31,6 +31,7 @@ intents.message_content = True
 intents.guilds = True
 intents.voice_states = True
 
+# 禁用默认 help，使用我们好看的 Embed 帮助菜单
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
 @bot.event
@@ -38,7 +39,31 @@ async def on_ready():
     print(f'✅ Bot 已成功登录: {bot.user}')
     print('-----------------------------------------')
 
-# ==================== 3. 自定义 .help 帮助菜单 ====================
+# ==================== 3. 数据持久化存储函数 ====================
+DATA_FILE = "account.json"
+
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "total_earn": 0.0,
+        "total_spend": 0.0,
+        "category_earn": {},
+        "category_spend": {},
+        "details": [],
+        "checkins": {},
+        "pet": {"name": "团子", "hunger": 80, "affection": 50, "level": 1, "exp": 0}
+    }
+
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+# ==================== 4. 自定义 .help 帮助菜单 ====================
 @bot.command(name='help', help='查看所有可用的指令帮助菜单')
 async def custom_help(ctx):
     embed = discord.Embed(
@@ -75,12 +100,22 @@ async def custom_help(ctx):
         ),
         inline=False
     )
+
+    embed.add_field(
+        name="🐾 虚拟宠物养成",
+        value=(
+            "`.pet` - 查看宠物状态面板\n"
+            "`.feed` - 给宠物喂食（增加饱食度与好感度）\n"
+            "`.play` - 和宠物玩耍（增加经验与好感度）\n"
+            "`.rename <新名字>` - 给宠物修改专属名字"
+        ),
+        inline=False
+    )
     
     embed.set_footer(text="✨ Powered by Python & Render | 随时陪伴你哦~")
     await ctx.send(embed=embed)
 
-# ==================== 4. 语音陪伴挂机指令 ====================
-
+# ==================== 5. 语音陪伴挂机指令 ====================
 @bot.command(name='join', help='让 Bot 进入你当前所在的语音频道')
 async def join(ctx):
     if not ctx.author.voice or not ctx.author.voice.channel:
@@ -103,30 +138,7 @@ async def leave(ctx):
     else:
         await ctx.send('❌ 我现在不在任何语音频道哦。')
 
-# ==================== 5. 带分类与持久化存储的记账助手 ====================
-
-DATA_FILE = "account.json"
-
-def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {
-        "total_earn": 0.0,
-        "total_spend": 0.0,
-        "category_earn": {},
-        "category_spend": {},
-        "details": [],
-        "checkins": {}
-    }
-
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
+# ==================== 6. 记账助手功能 ====================
 @bot.command(name='earn', help='记录收入。用法：.earn 500 工资 兼职收入')
 async def earn(ctx, amount: float, category: str, *, note: str = "未备注"):
     if amount <= 0:
@@ -198,8 +210,7 @@ async def clear_account(ctx):
     save_data(data)
     await ctx.send('🗑️ 账单已成功清空，所有分类、收入、支出和明细已重置为 0！')
 
-# ==================== 6. 智能倒计时提醒与签到打卡 ====================
-
+# ==================== 7. 智能倒计时与签到打卡 ====================
 @bot.command(name='timer', help='设置倒计时。用法：.timer 2d 记得打卡 或 .timer 5m 泡面好了')
 async def timer(ctx, time_str: str, *, message: str = "时间到！"):
     seconds = 0
@@ -255,8 +266,8 @@ async def checkin(ctx, *, mood: str = "正常"):
     save_data(data)
     
     await ctx.send(f'✅ **签到成功！**\n👤 签到人: `{ctx.author.name}`\n🌈 今日心情: `{mood}`\n🔥 连续签到: `{user_record["streak"]} 天`')
-    # ==================== 7. 虚拟宠物养成系统 ====================
 
+# ==================== 8. 虚拟宠物养成系统 ====================
 @bot.command(name='pet', help='查看你的专属虚拟宠物状态')
 async def pet_status(ctx):
     data = load_data()
@@ -272,7 +283,7 @@ async def pet_status(ctx):
         f"🍖 饱食度: `{pet['hunger']}/100`\n"
         f"💖 好感度: `{pet['affection']}/100`\n"
         f"-----------------------------------\n"
-        f"💡 提示：使用 `.feed` 喂食，使用 `.play` 和它玩耍！"
+        f"💡 提示：使用 `.feed` 喂食，`.play` 玩耍，`.rename` 改名！"
     )
     await ctx.send(msg)
 
@@ -308,7 +319,6 @@ async def pet_play(ctx):
     pet["exp"] += 30
     pet["affection"] = min(100, pet["affection"] + 10)
     
-    # 升级判定
     level_up_msg = ""
     if pet["exp"] >= 100:
         pet["level"] += 1
@@ -319,7 +329,24 @@ async def pet_play(ctx):
     
     await ctx.send(f"🎾 你开心地和 **{pet['name']}** 玩了一会儿！经验 `+30`，好感度 `+10`，饱食度 `-15`。{level_up_msg}")
 
-# ==================== 7. 主程序入口 ====================
+@bot.command(name='rename', help='给你的虚拟宠物修改名字。用法：.rename 布丁')
+async def pet_rename(ctx, *, new_name: str):
+    new_name = new_name.strip()
+    if not new_name:
+        await ctx.send('❌ 宠物名字不能为空哟！')
+        return
+        
+    data = load_data()
+    if "pet" not in data:
+        data["pet"] = {"name": "团子", "hunger": 80, "affection": 50, "level": 1, "exp": 0}
+    
+    old_name = data["pet"]["name"]
+    data["pet"]["name"] = new_name
+    save_data(data)
+    
+    await ctx.send(f'✨ 宠物名字修改成功！原本的 **{old_name}** 现在正式改名为 **{new_name}** 啦！ 🎉')
+
+# ==================== 9. 主程序入口 ====================
 if __name__ == '__main__':
     keep_alive()
     TOKEN = os.getenv('DISCORD_TOKEN')

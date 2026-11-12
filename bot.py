@@ -31,14 +31,56 @@ intents.message_content = True
 intents.guilds = True
 intents.voice_states = True
 
-bot = commands.Bot(command_prefix='.', intents=intents)
+# 自带的 help 先禁用，我们用自定义好看的 Embed 菜单
+bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
 @bot.event
 async def on_ready():
     print(f'✅ Bot 已成功登录: {bot.user}')
     print('-----------------------------------------')
 
-# ==================== 3. 语音陪伴挂机指令 ====================
+# ==================== 3. 自定义好看的 .help 帮助菜单 ====================
+@bot.command(name='help', help='查看所有可用的指令帮助菜单')
+async def custom_help(ctx):
+    embed = discord.Embed(
+        title="🤖 机器人指令帮助指南",
+        description="这里是当前所有可用的功能指令列表，快来试试吧！",
+        color=discord.Color.purple()
+    )
+    
+    embed.add_field(
+        name="🎧 语音陪伴",
+        value=(
+            "`.join` - 让 Bot 加入你当前所在的语音频道\n"
+            "`.leave` - 让 Bot 退出语音频道"
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="📊 分类记账本",
+        value=(
+            "`.earn <金额> <分类> <备注>` - 记录收入\n"
+            "`.spend <金额> <分类> <备注>` - 记录支出\n"
+            "`.balance` - 查看总账、分类汇总与最近明细\n"
+            "`.clear` - 清空并重置所有账单数据"
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="⏰ 工具与互动",
+        value=(
+            "`.timer <秒数> <提醒内容>` - 设置倒计时提醒\n"
+            "`.checkin <心情>` - 每日心情打卡与连续签到"
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="✨ Powered by Python & Render | 随时陪伴你哦~")
+    await ctx.send(embed=embed)
+
+# ==================== 4. 语音陪伴挂机指令 ====================
 
 @bot.command(name='join', help='让 Bot 进入你当前所在的语音频道')
 async def join(ctx):
@@ -62,7 +104,7 @@ async def leave(ctx):
     else:
         await ctx.send('❌ 我现在不在任何语音频道哦。')
 
-# ==================== 4. 带分类与持久化存储的记账助手 ====================
+# ==================== 5. 带分类与持久化存储的记账助手 ====================
 
 DATA_FILE = "account.json"
 
@@ -157,7 +199,7 @@ async def clear_account(ctx):
     save_data(data)
     await ctx.send('🗑️ 账单已成功清空，所有分类、收入、支出和明细已重置为 0！')
 
-# ==================== 5. 新增：倒计时提醒与签到打卡 ====================
+# ==================== 6. 倒计时提醒与签到打卡 ====================
 
 @bot.command(name='timer', help='设置一个倒计时提醒。用法：.timer 60 记得喝水')
 async def timer(ctx, seconds: int, *, message: str = "时间到！"):
@@ -196,7 +238,7 @@ async def checkin(ctx, *, mood: str = "正常"):
     
     await ctx.send(f'✅ **签到成功！**\n👤 签到人: `{ctx.author.name}`\n🌈 今日心情: `{mood}`\n🔥 连续签到: `{user_record["streak"]} 天`')
 
-# ==================== 6. 主程序入口 ====================
+# ==================== 7. 主程序入口 ====================
 if __name__ == '__main__':
     keep_alive()
     TOKEN = os.getenv('DISCORD_TOKEN')

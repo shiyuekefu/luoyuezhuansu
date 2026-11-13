@@ -32,6 +32,7 @@ intents.message_content = True
 intents.guilds = True
 intents.voice_states = True
 
+# 禁用默认 help，使用自定义精美帮助菜单
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
 @bot.event
@@ -91,18 +92,18 @@ async def custom_help(ctx):
     )
     
     embed.add_field(
-        name="📊 分类记账本",
+        name="📊 智能分类记账本",
         value=(
             "`.earn <金额> <分类> <备注>` - 记录收入\n"
             "`.spend <金额> <分类> <备注>` - 记录支出\n"
-            "`.balance` - 查看总账、分类汇总与最近明细\n"
+            "`.balance` - 查看总账、分类净结余（自动收支抵消）与最近明细\n"
             "`.clear` - 清空并重置所有账单数据"
         ),
         inline=False
     )
     
     embed.add_field(
-        name="⏰ 工具与互动",
+        name="⏰ 工具与联动",
         value=(
             "`.timer <时间(支持s/m/h/d)> <提醒内容>` - 设置倒计时提醒\n"
             "`.checkin <心情>` - 每日心情打卡（**自动联动喂养宠物**）"
@@ -149,7 +150,7 @@ async def leave(ctx):
     else:
         await ctx.send('❌ 我现在不在任何语音频道哦。')
 
-# ==================== 6. 记账助手功能 ====================
+# ==================== 6. 记账助手功能（含分类净结余抵消） ====================
 @bot.command(name='earn', help='记录收入。用法：.earn 500 工资 兼职收入')
 async def earn(ctx, amount: float, category: str, *, note: str = "未备注"):
     if amount <= 0:
@@ -186,15 +187,30 @@ async def spend(ctx, amount: float, category: str, *, note: str = "未备注"):
     
     await ctx.send(f'📝 成功记入支出：`-¥{amount}` (分类: **{category}**，备注: {note})，目前总支出：`¥{data["total_spend"]}`')
 
-@bot.command(name='balance', help='查看当前账单结余、分类统计与最近明细')
+@bot.command(name='balance', help='查看当前账单结余、分类净值与最近明细')
 async def balance(ctx):
     data = load_data()
     earn_total = data["total_earn"]
     spend_total = data["total_spend"]
     net = earn_total - spend_total
     
-    earn_cat_str = " | ".join([f"{cat}: ¥{amt}" for cat, amt in data["category_earn"].items()]) if data["category_earn"] else "暂无收入分类"
-    spend_cat_str = " | ".join([f"{cat}: ¥{amt}" for cat, amt in data["category_spend"].items()]) if data["category_spend"] else "暂无支出分类"
+    # 自动计算每个分类的净结余（收入 - 支出）
+    all_categories = set(data["category_earn"].keys()) | set(data["category_spend"].keys())
+    cat_net_list = []
+    
+    for cat in all_categories:
+        cat_earn = data["category_earn"].get(cat, 0.0)
+        cat_spend = data["category_spend"].get(cat, 0.0)
+        cat_net = cat_earn - cat_spend
+        
+        if cat_net > 0:
+            cat_net_list.append(f"🟢 {cat}: `+¥{cat_net}`")
+        elif cat_net < 0:
+            cat_net_list.append(f"🔴 {cat}: `-¥{abs(cat_net)}`")
+        else:
+            cat_net_list.append(f"⚪ {cat}: `¥0`")
+
+    cat_summary_str = "\n".join(cat_net_list) if cat_net_list else "暂无分类记录"
 
     recent_details = data["details"][-5:]
     details_str = "\n".join(recent_details) if recent_details else "暂无记账记录"
@@ -202,9 +218,11 @@ async def balance(ctx):
     msg = (
         f"📊 **当前财务账单面板**\n"
         f"-----------------------------------\n"
-        f"🟢 总收入: `¥{earn_total}` ({earn_cat_str})\n"
-        f"🔴 总支出: `¥{spend_total}` ({spend_cat_str})\n"
-        f"💰 当前结余: **`¥{net}`**\n"
+        f"🟢 累计总收入: `¥{earn_total}`\n"
+        f"🔴 累计总支出: `¥{spend_total}`\n"
+        f"💰 当前总结余: **`¥{net}`**\n"
+        f"-----------------------------------\n"
+        f"🏷️ **各分类净结余 (自动抵消后):**\n{cat_summary_str}\n"
         f"-----------------------------------\n"
         f"📜 **最近动态 (最近5条):**\n{details_str}"
     )
@@ -221,7 +239,7 @@ async def clear_account(ctx):
     save_data(data)
     await ctx.send('🗑️ 账单已成功清空，所有分类、收入、支出和明细已重置为 0！')
 
-# ==================== 7. 智能倒计时与签到联动打卡 ====================
+# ==================== 7. 智能多单位倒计时与签到联动打卡 ====================
 @bot.command(name='timer', help='设置倒计时。用法：.timer 2d 记得打卡 或 .timer 5m 泡面好了')
 async def timer(ctx, time_str: str, *, message: str = "时间到！"):
     seconds = 0
@@ -275,7 +293,7 @@ async def checkin(ctx, *, mood: str = "正常"):
     user_record["mood"] = mood
     data["checkins"][user_id] = user_record
     
-    # 🌟 签到联动宠物：顺便给宠物喂食加经验！
+    # 🌟 签到联动宠物：顺便喂养宠物加经验
     if "pet" not in data:
         data["pet"] = {"name": "团子", "hunger": 80, "affection": 50, "level": 1, "exp": 0}
     
